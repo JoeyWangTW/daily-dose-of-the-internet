@@ -419,7 +419,7 @@ class XScraper:
 
 def main():
     # Define the path to save scraped data
-    output_dir = Path("scraped_data")
+    output_dir = Path("data")
     output_dir.mkdir(exist_ok=True)
     
     # Get user input for platform choice
