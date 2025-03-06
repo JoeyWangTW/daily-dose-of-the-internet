@@ -20,4 +20,19 @@ export type YouTubePost = {
   views: string;
 };
 
-export type FeedItem = TwitterPost | YouTubePost; 
+export type InstagramPost = {
+  type: 'instagram';
+  author: {
+    name: string;
+    handle: string;
+  };
+  text: string;
+  timestamp: string;
+  url: string;
+  media_url: string | null;
+  stats: {
+    likes?: string;
+  };
+};
+
+export type FeedItem = TwitterPost | YouTubePost | InstagramPost; 

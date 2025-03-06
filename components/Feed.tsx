@@ -1,6 +1,7 @@
 import { FeedItem } from '@/types/feed';
 import { TwitterPost } from './TwitterPost';
 import { YouTubePost } from './YouTubePost';
+import { InstagramPost } from './InstagramPost';
 
 export function Feed({ items }: { items: FeedItem[] }) {
   return (
@@ -9,8 +10,10 @@ export function Feed({ items }: { items: FeedItem[] }) {
         <div key={index}>
           {item.type === 'twitter' ? (
             <TwitterPost post={item} />
-          ) : (
+          ) : item.type === 'youtube' ? (
             <YouTubePost post={item} />
+          ) : (
+            <InstagramPost post={item} />
           )}
         </div>
       ))}
