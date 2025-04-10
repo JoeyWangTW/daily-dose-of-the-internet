@@ -30,24 +30,10 @@ def main():
         except ValueError:
             print("Invalid input. Please enter a number (1-3).")
     
-    # Get user input for content count for feed scraping
-    MAX_ITEMS = 100
-    while True:
-        try:
-            count = int(input(f"How many items would you like to scrape? (max {MAX_ITEMS}): "))
-            if 0 < count <= MAX_ITEMS:
-                break
-            elif count <= 0:
-                print("Please enter a positive number.")
-            else:
-                print(f"Please enter a number not exceeding {MAX_ITEMS}.")
-        except ValueError:
-            print("Please enter a valid number.")
-    
     if platform == 'youtube_feed':
         # Scrape YouTube feed
         youtube_scraper = YouTubeScraper()
-        youtube_videos = youtube_scraper.scrape_feed(max_videos=count)
+        youtube_videos = youtube_scraper.scrape_feed()
         
         # Save YouTube data
         with open(output_dir / "youtube_feed.json", "w", encoding="utf-8") as f:
@@ -58,7 +44,7 @@ def main():
     elif platform == 'x':
         # Scrape Twitter feed
         x_scraper = XScraper()
-        tweets = x_scraper.scrape_feed(max_tweets=count)
+        tweets = x_scraper.scrape_feed()
         
         # Save Twitter data
         with open(output_dir / "twitter_feed.json", "w", encoding="utf-8") as f:
@@ -69,7 +55,7 @@ def main():
     else:  # platform == 'instagram'
         # Scrape Instagram feed
         instagram_scraper = InstagramScraper()
-        posts = instagram_scraper.scrape_feed(max_posts=count)
+        posts = instagram_scraper.scrape_feed()
         
         # Save Instagram data
         with open(output_dir / "instagram_feed.json", "w", encoding="utf-8") as f:

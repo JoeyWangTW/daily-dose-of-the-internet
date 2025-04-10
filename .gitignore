@@ -53,4 +53,5 @@ venv/
 # Scraped Data
 scraped_data/
 data/*.json
+raw_data/
 !data/example_feed.json
