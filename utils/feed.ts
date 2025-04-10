@@ -1,7 +1,31 @@
 import { FeedItem, TwitterPost, YouTubePost, InstagramPost } from '@/types/feed';
-import twitterData from '@/data/twitter_feed.json';
-import youtubeData from '@/data/youtube_feed.json';
-import instagramData from '@/data/instagram_feed.json';
+
+// Define empty default data
+let twitterData: any[] = [];
+let youtubeData: any[] = [];
+let instagramData: any[] = [];
+
+// Try individual imports
+try {
+  // @ts-ignore - Handle missing module
+  twitterData = require('@/data/twitter_feed.json') || [];
+} catch (e) {
+  console.log('Twitter data not found');
+}
+
+try {
+  // @ts-ignore - Handle missing module
+  youtubeData = require('@/data/youtube_feed.json') || [];
+} catch (e) {
+  console.log('YouTube data not found');
+}
+
+try {
+  // @ts-ignore - Handle missing module
+  instagramData = require('@/data/instagram_feed.json') || [];
+} catch (e) {
+  console.log('Instagram data not found');
+}
 
 type RawTwitterPost = {
   author: {
@@ -58,34 +82,40 @@ function parseRelativeTime(timeStr: string): number {
 }
 
 export function loadFeedData(): FeedItem[] {
-  const twitterPosts: TwitterPost[] = (twitterData as RawTwitterPost[]).map(post => ({
-    type: 'twitter',
-    author: post.author,
-    text: post.text,
-    timestamp: post.timestamp,
-    url: post.url,
-    media_url: post.media_url,
-  }));
+  const twitterPosts: TwitterPost[] = Array.isArray(twitterData) 
+    ? (twitterData as RawTwitterPost[]).map(post => ({
+        type: 'twitter',
+        author: post.author,
+        text: post.text,
+        timestamp: post.timestamp,
+        url: post.url,
+        media_url: post.media_url,
+      }))
+    : [];
 
-  const youtubePosts: YouTubePost[] = (youtubeData as RawYouTubePost[]).map(post => ({
-    type: 'youtube',
-    title: post.title,
-    channel: post.channel,
-    url: post.url,
-    thumbnail: post.thumbnail,
-    posted_time: post.posted_time,
-    views: post.views,
-  }));
+  const youtubePosts: YouTubePost[] = Array.isArray(youtubeData)
+    ? (youtubeData as RawYouTubePost[]).map(post => ({
+        type: 'youtube',
+        title: post.title,
+        channel: post.channel,
+        url: post.url,
+        thumbnail: post.thumbnail,
+        posted_time: post.posted_time,
+        views: post.views,
+      }))
+    : [];
 
-  const instagramPosts: InstagramPost[] = (instagramData as RawInstagramPost[]).map(post => ({
-    type: 'instagram',
-    author: post.author,
-    text: post.text,
-    timestamp: post.timestamp,
-    url: post.url,
-    media_url: post.media_url,
-    stats: post.stats,
-  }));
+  const instagramPosts: InstagramPost[] = Array.isArray(instagramData)
+    ? (instagramData as RawInstagramPost[]).map(post => ({
+        type: 'instagram',
+        author: post.author,
+        text: post.text,
+        timestamp: post.timestamp,
+        url: post.url,
+        media_url: post.media_url,
+        stats: post.stats,
+      }))
+    : [];
 
   // Combine and sort by timestamp/posted_time
   const allPosts = [...twitterPosts, ...youtubePosts, ...instagramPosts].sort((a, b) => {
