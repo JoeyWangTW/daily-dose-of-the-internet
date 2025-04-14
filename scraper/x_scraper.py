@@ -15,10 +15,10 @@ class XScraper:
     def scrape_feed(self, max_tweets: int = 50) -> List[Dict]:
         """Main scraping function that performs scrolling and tweet extraction"""
         # Directly get tweets by scrolling and parsing simultaneously
-        tweets = self._scrape_tweets_while_scrolling(max_tweets=max_tweets, scroll_count=3)
+        tweets = self._scrape_tweets_while_scrolling(max_tweets=max_tweets)
         return tweets
     
-    def _scrape_tweets_while_scrolling(self, max_tweets: int = 50, scroll_count: int = 3) -> List[Dict]:
+    def _scrape_tweets_while_scrolling(self, max_tweets: int = 50, max_scroll_attempts: int = 20) -> List[Dict]:
         """Scroll through the feed and capture tweets as they appear"""
         all_tweets = []
         seen_tweet_urls = set()
@@ -53,7 +53,7 @@ class XScraper:
                     print(f"Debug: Error waiting for feed: {str(e)}")
                     return []
             
-            print(f"\nLoading content by scrolling {scroll_count} times...")
+            print(f"\nLoading content by scrolling until we find {max_tweets} tweets...")
             
             # Initial wait for any tweet to be visible
             try:
@@ -77,13 +77,15 @@ class XScraper:
             self._extract_visible_tweets(page, all_tweets, seen_tweet_urls, max_tweets)
             print(f"Debug: Extracted {len(all_tweets)} tweets before scrolling")
             
+            previous_tweet_count = len(all_tweets)
+            current_scroll = 0
+            no_progress_count = 0  # Counter for consecutive scrolls with no new tweets
+            
             # Scroll to load more tweets
-            for i in range(scroll_count):
-                if len(all_tweets) >= max_tweets:
-                    print(f"Debug: Reached max tweet limit of {max_tweets}")
-                    break
-                    
+            while len(all_tweets) < max_tweets and current_scroll < max_scroll_attempts:
                 try:
+                    print(f"Debug: Starting scroll {current_scroll+1}/{max_scroll_attempts} - Current tweets: {len(all_tweets)}/{max_tweets}")
+                    
                     # Get current scroll position
                     current_position = page.evaluate("""
                         window.pageYOffset || document.documentElement.scrollTop
@@ -150,16 +152,30 @@ class XScraper:
                     
                     # Extract tweets after each scroll
                     self._extract_visible_tweets(page, all_tweets, seen_tweet_urls, max_tweets)
-                    print(f"Debug: Extracted {len(all_tweets)} tweets after scroll {i+1}/{scroll_count}")
+                    new_tweet_count = len(all_tweets)
+                    print(f"Debug: Extracted {new_tweet_count} tweets after scroll {current_scroll+1}")
+                    
+                    # Check if we've made progress
+                    if new_tweet_count > previous_tweet_count:
+                        no_progress_count = 0  # Reset counter since we made progress
+                    else:
+                        no_progress_count += 1
+                        if no_progress_count >= 3:
+                            print("Debug: No new tweets found in the last 3 scrolls, may have reached the end")
+                            break
+                    
+                    previous_tweet_count = new_tweet_count
                     
                     # Wait longer between scrolls to ensure content loads
                     page.wait_for_timeout(3000)
                     
-                    print(f"Debug: Completed scroll {i+1}/{scroll_count}")
+                    current_scroll += 1
+                    print(f"Debug: Completed scroll {current_scroll}/{max_scroll_attempts}")
                     
                 except Exception as e:
                     print(f"Debug: Error during scrolling: {str(e)}")
                     page.wait_for_timeout(2000)
+                    current_scroll += 1
             
             page.close()
             print(f"Debug: Scraped a total of {len(all_tweets)} tweets")

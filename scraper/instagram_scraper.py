@@ -16,10 +16,10 @@ class InstagramScraper:
     def scrape_feed(self, max_posts: int = 50) -> List[Dict]:
         """Main scraping function that performs scrolling and post extraction"""
         # Directly get posts by scrolling and parsing simultaneously
-        posts = self._scrape_posts_while_scrolling(max_posts=max_posts, scroll_count=3)
+        posts = self._scrape_posts_while_scrolling(max_posts=max_posts)
         return posts
     
-    def _scrape_posts_while_scrolling(self, max_posts: int = 50, scroll_count: int = 3) -> List[Dict]:
+    def _scrape_posts_while_scrolling(self, max_posts: int = 50, max_scroll_attempts: int = 20) -> List[Dict]:
         """Scroll through the feed and capture posts as they appear"""
         all_posts = []
         seen_post_urls = set()
@@ -119,14 +119,16 @@ class InstagramScraper:
             self._extract_visible_posts(page, all_posts, seen_post_urls, max_posts)
             print(f"Debug: Extracted {len(all_posts)} posts before scrolling")
             
+            print(f"\nScrolling to collect {max_posts} posts...")
+            
+            previous_post_count = len(all_posts)
+            current_scroll = 0
+            no_progress_count = 0  # Counter for consecutive scrolls with no new posts
+            
             # Use robust scrolling technique
-            for i in range(scroll_count):
-                if len(all_posts) >= max_posts:
-                    print(f"Debug: Reached max post limit of {max_posts}")
-                    break
-                    
+            while len(all_posts) < max_posts and current_scroll < max_scroll_attempts:
                 try:
-                    print(f"Debug: Starting scroll {i+1}/{scroll_count}")
+                    print(f"Debug: Starting scroll {current_scroll+1}/{max_scroll_attempts} - Current posts: {len(all_posts)}/{max_posts}")
                     
                     # Get current height
                     previous_height = page.evaluate("""() => {
@@ -219,17 +221,31 @@ class InstagramScraper:
                     
                     # Extract posts after each scroll
                     self._extract_visible_posts(page, all_posts, seen_post_urls, max_posts)
-                    print(f"Debug: Extracted {len(all_posts)} posts after scroll {i+1}/{scroll_count}")
+                    new_post_count = len(all_posts)
+                    print(f"Debug: Extracted {new_post_count} posts after scroll {current_scroll+1}")
+                    
+                    # Check if we've made progress
+                    if new_post_count > previous_post_count:
+                        no_progress_count = 0  # Reset counter since we made progress
+                    else:
+                        no_progress_count += 1
+                        if no_progress_count >= 3:
+                            print("Debug: No new posts found in the last 3 scrolls, may have reached the end")
+                            break
+                    
+                    previous_post_count = new_post_count
                     
                     # Add random pause between scrolls
                     wait_time = random.uniform(1.5, 3.0)
                     page.wait_for_timeout(int(wait_time * 1000))
                     
-                    print(f"Debug: Completed scroll {i+1}/{scroll_count}")
+                    current_scroll += 1
+                    print(f"Debug: Completed scroll {current_scroll}/{max_scroll_attempts}")
                     
                 except Exception as e:
                     print(f"Debug: Error during scrolling: {str(e)}")
                     page.wait_for_timeout(2000)
+                    current_scroll += 1
             
             page.close()
             print(f"Debug: Scraped a total of {len(all_posts)} posts")

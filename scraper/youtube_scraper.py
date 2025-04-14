@@ -15,14 +15,14 @@ class YouTubeScraper:
     def scrape_feed(self, max_videos: int = 50) -> List[Dict]:
         """Main scraping function that performs both loading and parsing steps"""
         # Step 1: Load and save the feed
-        html_file_path = self._load_and_save_feed()
+        html_file_path = self._load_and_save_feed(max_videos=max_videos)
         
         # Step 2: Parse the saved feed
         videos = self._parse_saved_feed(html_file_path, max_videos)
         
         return videos
     
-    def _load_and_save_feed(self, scroll_count: int = 5) -> str:
+    def _load_and_save_feed(self, max_videos: int = 50, scroll_count: int = 5) -> str:
         """Step 1: Load the feed by scrolling and save the HTML content"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_path = self.raw_data_dir / f"youtube_feed_{timestamp}.html"
@@ -51,11 +51,45 @@ class YouTubeScraper:
                 page.close()
                 return ""
             
-            print(f"\nLoading content by scrolling {scroll_count} times...")
+            print(f"\nLoading content by scrolling until we find {max_videos} videos...")
+            
+            # Initial count of videos (to ensure we're making progress)
+            initial_video_count = len(page.query_selector_all('ytd-rich-grid-media'))
+            previous_video_count = initial_video_count
+            current_scroll = 0
+            max_scroll_attempts = 20  # Set maximum scrolls to prevent infinite loops
             
             # Scroll to load more videos
-            for i in range(scroll_count):
+            while current_scroll < max_scroll_attempts:
                 try:
+                    # Check how many videos we've loaded so far
+                    current_video_count = len(page.query_selector_all('ytd-rich-grid-media'))
+                    print(f"Debug: Currently loaded {current_video_count} videos")
+                    
+                    # If we've loaded enough videos, we can stop scrolling
+                    if current_video_count >= max_videos:
+                        print(f"Debug: Found {current_video_count} videos, which is enough (target: {max_videos})")
+                        break
+                    
+                    # If we're not making progress between scrolls, try a different approach or break
+                    if current_video_count == previous_video_count and current_scroll > 3:
+                        print("Debug: Not loading new videos despite scrolling, attempting alternative methods")
+                        
+                        # Try alternative scroll method
+                        page.evaluate("""
+                            window.scrollBy({
+                                top: 1000,
+                                behavior: 'smooth'
+                            });
+                        """)
+                        page.wait_for_timeout(2000)
+                        
+                        # Check if made progress after alternative method
+                        new_count = len(page.query_selector_all('ytd-rich-grid-media'))
+                        if new_count == current_video_count:
+                            print("Debug: Still not loading new videos, may have reached the end of available content")
+                            break
+                    
                     # Get current scroll position
                     current_position = page.evaluate("""
                         window.pageYOffset || document.documentElement.scrollTop
@@ -91,11 +125,14 @@ class YouTubeScraper:
                         """)
                         page.wait_for_timeout(2000)
                     
-                    print(f"Debug: Completed scroll {i+1}/{scroll_count}")
+                    previous_video_count = current_video_count
+                    current_scroll += 1
+                    print(f"Debug: Completed scroll {current_scroll}/{max_scroll_attempts}")
                     
                 except Exception as e:
                     print(f"Debug: Error during scrolling: {str(e)}")
                     page.wait_for_timeout(2000)
+                    current_scroll += 1
             
             # Extract and save main content
             try:

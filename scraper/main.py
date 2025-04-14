@@ -30,10 +30,20 @@ def main():
         except ValueError:
             print("Invalid input. Please enter a number (1-3).")
     
+    # Get the number of content items to scrape
+    while True:
+        try:
+            item_count = int(input("\nEnter the number of items to scrape: "))
+            if item_count > 0:
+                break
+            print("Please enter a positive number.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+    
     if platform == 'youtube_feed':
         # Scrape YouTube feed
         youtube_scraper = YouTubeScraper()
-        youtube_videos = youtube_scraper.scrape_feed()
+        youtube_videos = youtube_scraper.scrape_feed(max_videos=item_count)
         
         # Save YouTube data
         with open(output_dir / "youtube_feed.json", "w", encoding="utf-8") as f:
@@ -44,7 +54,7 @@ def main():
     elif platform == 'x':
         # Scrape Twitter feed
         x_scraper = XScraper()
-        tweets = x_scraper.scrape_feed()
+        tweets = x_scraper.scrape_feed(max_tweets=item_count)
         
         # Save Twitter data
         with open(output_dir / "twitter_feed.json", "w", encoding="utf-8") as f:
@@ -55,7 +65,7 @@ def main():
     else:  # platform == 'instagram'
         # Scrape Instagram feed
         instagram_scraper = InstagramScraper()
-        posts = instagram_scraper.scrape_feed()
+        posts = instagram_scraper.scrape_feed(max_posts=item_count)
         
         # Save Instagram data
         with open(output_dir / "instagram_feed.json", "w", encoding="utf-8") as f:
