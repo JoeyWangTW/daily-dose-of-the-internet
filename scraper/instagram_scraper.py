@@ -14,14 +14,326 @@ class InstagramScraper:
         self.raw_data_dir.mkdir(exist_ok=True)
     
     def scrape_feed(self, max_posts: int = 50) -> List[Dict]:
-        """Main scraping function that performs both loading and parsing steps"""
-        # Step 1: Load and save the feed
-        html_file_path = self._load_and_save_feed()
-        
-        # Step 2: Parse the saved feed
-        posts = self._parse_saved_feed(html_file_path, max_posts)
-        
+        """Main scraping function that performs scrolling and post extraction"""
+        # Directly get posts by scrolling and parsing simultaneously
+        posts = self._scrape_posts_while_scrolling(max_posts=max_posts, scroll_count=3)
         return posts
+    
+    def _scrape_posts_while_scrolling(self, max_posts: int = 50, scroll_count: int = 3) -> List[Dict]:
+        """Scroll through the feed and capture posts as they appear"""
+        all_posts = []
+        seen_post_urls = set()
+        
+        with BrowserManager() as browser:
+            # Use the first context that's already open
+            context = browser.contexts[0]
+            print("\nDebug: Browser context created")
+            
+            # Create a new page in the existing context
+            page = context.new_page()
+            print("Debug: New page created")
+            
+            # Navigate to Instagram
+            print("Debug: Navigating to Instagram...")
+            try:
+                # Change wait_until to 'domcontentloaded' for faster initial load
+                page.goto('https://www.instagram.com', wait_until='domcontentloaded')
+                print("Debug: Initial page load complete")
+                
+                # Additional wait to ensure page is fully loaded
+                page.wait_for_timeout(5000)
+            except Exception as e:
+                print(f"Debug: Error during initial page load: {str(e)}")
+                # Try again with longer timeout
+                try:
+                    page.goto('https://www.instagram.com', wait_until='domcontentloaded', timeout=60000)
+                    page.wait_for_timeout(5000)
+                except Exception as e:
+                    print(f"Debug: Error during retry page load: {str(e)}")
+                    return []
+            
+            # Check for login status
+            if page.url.startswith('https://www.instagram.com/accounts/login/'):
+                print("\nPlease log in to Instagram in the browser window")
+                print("Waiting for login (up to 2 minutes)...")
+                try:
+                    # Wait for navigation after login
+                    page.wait_for_url('https://www.instagram.com/', timeout=120000)
+                    print("Debug: Login detected and waited for redirect")
+                    
+                    # Additional wait after login
+                    page.wait_for_timeout(5000)
+                except Exception as e:
+                    print(f"Debug: Error waiting for login redirect: {str(e)}")
+                    return []
+            
+            # Look for and dismiss any popups or dialogs
+            try:
+                # Check for and dismiss "Save Login Info" dialog
+                save_info_button = page.query_selector('button:has-text("Not Now")')
+                if save_info_button:
+                    print("Debug: Found 'Not Now' button, clicking it")
+                    save_info_button.click()
+                    page.wait_for_timeout(2000)
+                    
+                # Check for and dismiss notifications dialog
+                notifications_button = page.query_selector('button:has-text("Not Now")')
+                if notifications_button:
+                    print("Debug: Found notifications dialog, clicking 'Not Now'")
+                    notifications_button.click()
+                    page.wait_for_timeout(2000)
+            except Exception as e:
+                print(f"Debug: Error handling dialogs: {str(e)}")
+            
+            # Wait for the feed to load
+            try:
+                print("Debug: Waiting for feed to load...")
+                # Try multiple selectors for feed content
+                feed_selectors = [
+                    'article', 
+                    'div[role="feed"]',
+                    'div.x9f619.xjbqb8w.x78zum5.x168nmei.x13lgxp2.x5pf9jr.xo71vjh.x1uhb9sk.x1plvlek.xryxfnj.x1c4vz4f.x2lah0s.xdt5ytf.xqjyukv.x6s0dn4.x1oa3qoh.x1nhvcw1'
+                ]
+                
+                feed_found = False
+                for selector in feed_selectors:
+                    try:
+                        page.wait_for_selector(selector, timeout=10000)
+                        print(f"Debug: Feed found with selector: {selector}")
+                        feed_found = True
+                        break
+                    except Exception:
+                        continue
+                
+                if not feed_found:
+                    print("Debug: Could not find feed with standard selectors")
+                    # Try to interact with the page to force content loading
+                    page.mouse.move(300, 300)
+                    page.mouse.wheel(0, 200)
+                    page.wait_for_timeout(3000)
+            except Exception as e:
+                print(f"Debug: Error waiting for feed: {str(e)}")
+                # Continue anyway and try scrolling
+            
+            # Extract posts before any scrolling
+            self._extract_visible_posts(page, all_posts, seen_post_urls, max_posts)
+            print(f"Debug: Extracted {len(all_posts)} posts before scrolling")
+            
+            # Use robust scrolling technique
+            for i in range(scroll_count):
+                if len(all_posts) >= max_posts:
+                    print(f"Debug: Reached max post limit of {max_posts}")
+                    break
+                    
+                try:
+                    print(f"Debug: Starting scroll {i+1}/{scroll_count}")
+                    
+                    # Get current height
+                    previous_height = page.evaluate("""() => {
+                        return document.documentElement.scrollHeight;
+                    }""")
+                    print(f"Debug: Current document height: {previous_height}")
+                    
+                    # Scroll using different techniques
+                    scroll_techniques = [
+                        # Regular scroll to bottom
+                        """() => {
+                            window.scrollTo({
+                                top: document.documentElement.scrollHeight,
+                                behavior: 'smooth'
+                            });
+                        }""",
+                        # Scroll by a fixed amount
+                        """() => {
+                            window.scrollBy({
+                                top: 1000,
+                                behavior: 'smooth'
+                            });
+                        }""",
+                        # Click-based scroll
+                        """() => {
+                            // Find bottom-most element and click near it
+                            const articles = document.querySelectorAll('article');
+                            if (articles.length > 0) {
+                                const lastArticle = articles[articles.length - 1];
+                                lastArticle.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                            }
+                        }"""
+                    ]
+                    
+                    # Try primary scroll method
+                    page.evaluate(scroll_techniques[0])
+                    page.wait_for_timeout(3000)
+                    
+                    # Check if scroll worked
+                    new_height = page.evaluate("""() => {
+                        return document.documentElement.scrollHeight;
+                    }""")
+                    print(f"Debug: New document height: {new_height}")
+                    
+                    # If primary method didn't work, try alternatives
+                    if new_height <= previous_height:
+                        print("Debug: Primary scroll didn't work, trying alternative methods")
+                        # Try alternative scroll methods
+                        page.evaluate(scroll_techniques[1])
+                        page.wait_for_timeout(2000)
+                        
+                        # Try mouse wheel simulation
+                        page.mouse.move(500, 500)
+                        page.mouse.wheel(0, 500)
+                        page.wait_for_timeout(2000)
+                        
+                        # Try space key press to scroll
+                        page.keyboard.press("Space")
+                        page.wait_for_timeout(2000)
+                        
+                        # Try finding and clicking "Load more" type buttons
+                        load_more_buttons = [
+                            'button:has-text("Load more")', 
+                            'button:has-text("Show more")',
+                            'a:has-text("See more")'
+                        ]
+                        
+                        for button_selector in load_more_buttons:
+                            try:
+                                button = page.query_selector(button_selector)
+                                if button:
+                                    print(f"Debug: Found and clicking '{button_selector}'")
+                                    button.click()
+                                    page.wait_for_timeout(3000)
+                                    break
+                            except Exception:
+                                continue
+                    
+                    # Check if we're at the end of the feed
+                    end_indicators = [
+                        'div:has-text("You\'re all caught up")',
+                        'div:has-text("End of feed")',
+                        'div:has-text("No more posts")'
+                    ]
+                    
+                    for indicator in end_indicators:
+                        if page.query_selector(indicator):
+                            print(f"Debug: Found end of feed indicator: {indicator}")
+                            break
+                    
+                    # Extract posts after each scroll
+                    self._extract_visible_posts(page, all_posts, seen_post_urls, max_posts)
+                    print(f"Debug: Extracted {len(all_posts)} posts after scroll {i+1}/{scroll_count}")
+                    
+                    # Add random pause between scrolls
+                    wait_time = random.uniform(1.5, 3.0)
+                    page.wait_for_timeout(int(wait_time * 1000))
+                    
+                    print(f"Debug: Completed scroll {i+1}/{scroll_count}")
+                    
+                except Exception as e:
+                    print(f"Debug: Error during scrolling: {str(e)}")
+                    page.wait_for_timeout(2000)
+            
+            page.close()
+            print(f"Debug: Scraped a total of {len(all_posts)} posts")
+            
+            return all_posts[:max_posts]
+    
+    def _extract_visible_posts(self, page, all_posts, seen_post_urls, max_posts):
+        """Extract data from all currently visible posts"""
+        # Extract posts using JavaScript
+        post_data = page.evaluate("""() => {
+            const posts = [];
+            document.querySelectorAll('article').forEach(article => {
+                try {
+                    // Get author info
+                    const authorElement = article.querySelector('span._ap3a._aaco._aacw._aacx._aad7._aade');
+                    const authorName = authorElement ? authorElement.textContent.trim() : 'Unknown';
+                    
+                    // Try different selectors for profile image
+                    let authorImg = article.querySelector('img[crossorigin="anonymous"]');
+                    if (!authorImg) {
+                        authorImg = article.querySelector('img[alt*="profile picture"]');
+                    }
+                    if (!authorImg) {
+                        authorImg = article.querySelector('canvas.x1upo8f9');
+                    }
+                    
+                    const verified = !!article.querySelector('svg[aria-label="Verified"]');
+                    
+                    // Get post text
+                    const textElement = article.querySelector('span._ap3a._aaco._aacu._aacx._aad7._aade');
+                    const text = textElement ? textElement.textContent.trim() : '';
+                    
+                    // Get timestamp and URL
+                    const timeElement = article.querySelector('time');
+                    const timestamp = timeElement ? timeElement.getAttribute('datetime') : null;
+                    
+                    // Try different approaches to get the post URL
+                    let postLink = null;
+                    if (timeElement && timeElement.parentElement) {
+                        postLink = timeElement.parentElement.href;
+                    }
+                    if (!postLink) {
+                        const linkElement = article.querySelector('a[href*="/p/"]');
+                        if (linkElement) {
+                            postLink = linkElement.href;
+                        }
+                    }
+                    
+                    // Get likes
+                    let likes = null;
+                    const likeElements = article.querySelectorAll('span[dir="auto"]');
+                    for (const elem of likeElements) {
+                        if (elem.textContent.includes('Liked by')) {
+                            const match = elem.textContent.match(/Liked by ([^ ]+)/);
+                            if (match) {
+                                likes = match[1];
+                            } else {
+                                likes = elem.textContent;
+                            }
+                            break;
+                        }
+                    }
+                    
+                    // Get media
+                    let img = article.querySelector('img[alt*="Photo by"]');
+                    if (!img) {
+                        // Try alternative selectors
+                        img = article.querySelector('img.x5yr21d');
+                        if (!img) {
+                            img = article.querySelector('img.xpdipgo');
+                        }
+                    }
+                    
+                    const mediaUrl = img ? img.src : null;
+                    
+                    posts.push({
+                        author: {
+                            name: authorName,
+                            handle: authorName,
+                            verified: verified,
+                            profile_image: authorImg ? authorImg.src : null
+                        },
+                        text: text,
+                        timestamp: timestamp,
+                        stats: { likes: likes },
+                        url: postLink,
+                        media_url: mediaUrl
+                    });
+                } catch (e) {
+                    console.error('Error processing post:', e);
+                }
+            });
+            return posts;
+        }""")
+        
+        # Add unique posts to the collection
+        for post in post_data:
+            if len(all_posts) >= max_posts:
+                return
+                
+            if post['url'] and post['url'] not in seen_post_urls:
+                seen_post_urls.add(post['url'])
+                all_posts.append(post)
+                print(f"Debug: Successfully added post {len(all_posts)}")
     
     def _load_and_save_feed(self, scroll_count: int = 3) -> str:
         """Step 1: Load the feed by scrolling and save the HTML content"""
